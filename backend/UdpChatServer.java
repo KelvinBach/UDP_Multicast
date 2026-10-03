@@ -20,6 +20,7 @@ public class UdpChatServer {
     private static final AtomicLong sequence = new AtomicLong();
     private static volatile DatagramSocket socket;
     private static volatile MulticastSocket multicastSocket;
+    private static volatile NetworkInterface multicastInterface;
     private static volatile boolean running;
     private static volatile Config config = new Config();
     private static String localAddress = "127.0.0.1";
@@ -117,6 +118,8 @@ public class UdpChatServer {
                 multicastSocket = null;
                 throw new IllegalStateException("Không tìm thấy card mạng hỗ trợ Multicast.");
             }
+            multicastInterface = ni;
+            multicastSocket.setNetworkInterface(ni);
             multicastSocket.joinGroup(new InetSocketAddress(group, port), ni);
             running = true;
             Thread t = new Thread(() -> receiveMulticast(group), "udp-multicast-receiver");
@@ -174,10 +177,24 @@ public class UdpChatServer {
         sentIds.add(id);
         byte[] data = (id + SEP + clean(c.nickname) + SEP
                 + clean(c.groupName) + SEP + text).getBytes(StandardCharsets.UTF_8);
-        DatagramSocket sender = new DatagramSocket();
-        if ("Broadcast".equals(c.mode)) sender.setBroadcast(true);
-        sender.send(new DatagramPacket(data, data.length, target, c.port));
-        sender.close();
+        if ("Multicast".equals(c.mode)) {
+            NetworkInterface ni = multicastInterface;
+            if (ni == null) ni = findMulticastInterface();
+            if (ni == null) throw new IllegalStateException("Không tìm thấy card mạng Multicast để gửi.");
+
+            // Windows/JDK hiện tại có thể từ chối IP_MULTICAST_IF trên socket gửi
+            // với lỗi "Invalid argument: setsockopt". Để hệ điều hành chọn
+            // interface theo routing table; socket nhận vẫn được bind vào Wi-Fi cụ thể.
+            MulticastSocket sender = new MulticastSocket();
+            sender.setTimeToLive(1);
+            sender.send(new DatagramPacket(data, data.length, target, c.port));
+            sender.close();
+        } else {
+            DatagramSocket sender = new DatagramSocket();
+            if ("Broadcast".equals(c.mode)) sender.setBroadcast(true);
+            sender.send(new DatagramPacket(data, data.length, target, c.port));
+            sender.close();
+        }
     }
 
     private static void stopUdp() {
@@ -186,6 +203,7 @@ public class UdpChatServer {
             multicastSocket.close();
             multicastSocket = null;
         }
+        multicastInterface = null;
         if (socket != null) {
             socket.close();
             socket = null;
@@ -201,11 +219,22 @@ public class UdpChatServer {
 
     private static NetworkInterface findMulticastInterface() throws SocketException {
         Enumeration<NetworkInterface> all = NetworkInterface.getNetworkInterfaces();
+        NetworkInterface fallback = null;
         while (all.hasMoreElements()) {
             NetworkInterface ni = all.nextElement();
-            if (ni.isUp() && !ni.isLoopback() && ni.supportsMulticast()) return ni;
+            if (!ni.isUp() || ni.isLoopback() || !ni.supportsMulticast()) continue;
+            if (hasAddress(ni, localAddress)) return ni;
+            if (fallback == null) fallback = ni;
         }
-        return null;
+        return fallback;
+    }
+
+    private static boolean hasAddress(NetworkInterface ni, String address) {
+        Enumeration<InetAddress> addresses = ni.getInetAddresses();
+        while (addresses.hasMoreElements()) {
+            if (address.equals(addresses.nextElement().getHostAddress())) return true;
+        }
+        return false;
     }
 
     private static NetworkConfig detectNetworkConfig() throws SocketException {
