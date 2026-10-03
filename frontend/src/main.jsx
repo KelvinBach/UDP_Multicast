@@ -19,6 +19,8 @@ function App() {
   const [nickname, setNickname] = useState("User01");
   const [mode, setMode] = useState("Unicast");
   const [ip, setIp] = useState("127.0.0.1");
+  const [broadcastAddress, setBroadcastAddress] = useState("");
+  const [networkInfo, setNetworkInfo] = useState(null);
   const [port, setPort] = useState("5000");
   const [group, setGroup] = useState("239.0.0.1");
   const [groupName, setGroupName] = useState("TeamChat");
@@ -30,11 +32,19 @@ function App() {
   const chatRef = useRef(null);
 
   const activeTarget = useMemo(
-    () => mode === "Multicast" ? group : ip,
-    [mode, group, ip]
+    () => mode === "Multicast" ? group : mode === "Broadcast" ? broadcastAddress : ip,
+    [mode, group, ip, broadcastAddress]
   );
 
   useEffect(() => {
+    api("/api/network")
+      .then(data => {
+        setNetworkInfo(data);
+        setIp(data.localAddress);
+        setBroadcastAddress(data.broadcastAddress);
+      })
+      .catch(err => setError("Không lấy được cấu hình mạng tự động: " + err.message));
+
     api("/api/state")
       .then(data => {
         setRunning(data.running);
@@ -67,7 +77,7 @@ function App() {
     setError("");
     try {
       const params = new URLSearchParams({
-        mode, ip, port, group, groupName, nickname
+        mode, ip: activeTarget, port, group, groupName, nickname
       });
       const data = await api("/api/start?" + params.toString(), { method: "POST" });
       setRunning(data.running);
@@ -90,7 +100,7 @@ function App() {
     setError("");
     try {
       const body = new URLSearchParams({
-        mode, ip, port, group, groupName, nickname, message
+        mode, ip: activeTarget, port, group, groupName, nickname, message
       });
       await api("/api/send", {
         method: "POST",
@@ -146,9 +156,12 @@ function App() {
           </section>
           <section className="card">
             <h3><span>⚙</span> Cấu hình kết nối</h3>
-            <Field label={mode === "Broadcast" ? "IP Broadcast" : "IP đích"}>
-              <input value={ip} onChange={e => setIp(e.target.value)}
-                disabled={mode === "Multicast"} />
+            <Field label={mode === "Broadcast" ? "IP Broadcast (tự động)" : "IP đích"}>
+              <input
+                value={mode === "Broadcast" ? broadcastAddress : ip}
+                onChange={e => mode !== "Broadcast" && setIp(e.target.value)}
+                disabled={mode === "Multicast" || mode === "Broadcast"}
+              />
             </Field>
             <Field label="Port">
               <input value={port} onChange={e => setPort(e.target.value)}

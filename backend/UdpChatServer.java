@@ -28,6 +28,7 @@ public class UdpChatServer {
         localAddress = detectLocalAddress();
         HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", HTTP_PORT), 0);
         server.createContext("/api/state", UdpChatServer::state);
+        server.createContext("/api/network", UdpChatServer::network);
         server.createContext("/api/start", UdpChatServer::start);
         server.createContext("/api/stop", UdpChatServer::stop);
         server.createContext("/api/send", UdpChatServer::send);
@@ -78,6 +79,15 @@ public class UdpChatServer {
             json(ex, 400, "{\"error\":"+quote(e.getMessage())+"}");
         }
     }
+    private static void network(HttpExchange ex) throws IOException {
+        try {
+            NetworkConfig n = detectNetworkConfig();
+            json(ex, 200, n.toJson());
+        } catch (Exception e) {
+            json(ex, 500, "{\"error\":"+quote(e.getMessage())+"}");
+        }
+    }
+
     private static void state(HttpExchange ex) throws IOException {
         StringBuilder out = new StringBuilder();
         out.append("{\"running\":").append(running);
@@ -198,6 +208,27 @@ public class UdpChatServer {
         return null;
     }
 
+    private static NetworkConfig detectNetworkConfig() throws SocketException {
+        Enumeration<NetworkInterface> all = NetworkInterface.getNetworkInterfaces();
+        NetworkConfig fallback = null;
+        while (all.hasMoreElements()) {
+            NetworkInterface ni = all.nextElement();
+            if (!ni.isUp() || ni.isLoopback() || !ni.supportsMulticast()) continue;
+            for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
+                InetAddress a = ia.getAddress();
+                if (!(a instanceof Inet4Address) || a.isLoopbackAddress()) continue;
+                String ip = a.getHostAddress();
+                String broadcast = ia.getBroadcast() == null ? "" : ia.getBroadcast().getHostAddress();
+                int prefix = ia.getNetworkPrefixLength();
+                NetworkConfig n = new NetworkConfig(ip, broadcast, prefix, ni.getDisplayName());
+                if (broadcast != null && !broadcast.isEmpty()) return n;
+                if (fallback == null) fallback = n;
+            }
+        }
+        if (fallback != null) return fallback;
+        return new NetworkConfig("127.0.0.1", "255.255.255.255", 8, "Loopback");
+    }
+
     private static String detectLocalAddress() {
         try {
             Enumeration<NetworkInterface> all = NetworkInterface.getNetworkInterfaces();
@@ -280,6 +311,18 @@ public class UdpChatServer {
         ex.sendResponseHeaders(status, data.length);
         try (OutputStream out = ex.getResponseBody()) {
             out.write(data);
+        }
+    }
+
+    private record NetworkConfig(String localAddress, String broadcastAddress,
+                                  int prefixLength, String interfaceName) {
+        String toJson() {
+            return "{"
+                    + "\"localAddress\":" + quote(localAddress)
+                    + ",\"broadcastAddress\":" + quote(broadcastAddress)
+                    + ",\"prefixLength\":" + prefixLength
+                    + ",\"interfaceName\":" + quote(interfaceName)
+                    + "}";
         }
     }
 
