@@ -73,6 +73,19 @@ function App() {
     if (box) box.scrollTop = box.scrollHeight;
   }, [messages]);
 
+  const autoConfigureNetwork = async () => {
+    setError("");
+    try {
+      const data = await api("/api/network");
+      setNetworkInfo(data);
+      setIp(data.localAddress);
+      setBroadcastAddress(data.broadcastAddress);
+      setError("");
+    } catch (err) {
+      setError("Không tự động cấu hình được địa chỉ mạng: " + err.message);
+    }
+  };
+
   const start = async () => {
     setError("");
     try {
@@ -163,6 +176,14 @@ function App() {
                 disabled={mode === "Multicast" || mode === "Broadcast"}
               />
             </Field>
+            <button className="auto-config-btn" onClick={autoConfigureNetwork} type="button">
+              ↻&nbsp; Tự động cấu hình địa chỉ
+            </button>
+            {networkInfo && (
+              <div className="network-info">
+                {networkInfo.interfaceName} · /{networkInfo.prefixLength}
+              </div>
+            )}
             <Field label="Port">
               <input value={port} onChange={e => setPort(e.target.value)}
                 inputMode="numeric" />

@@ -41,6 +41,10 @@ h3 span { color: #5a6d88; }
 .mode.active { border-color: #9ecbfa; background: #eef7ff; color: #1677dd; }
 .radio { font-size: 17px; }
 .field { margin-top: 11px; }
+.auto-config-btn { width: 100%; margin-top: 12px; height: 38px; border: 1px solid #b9d8f8;
+  border-radius: 7px; background: #f3f9ff; color: #1677dd; font-weight: 700; }
+.auto-config-btn:hover { background: #e7f3ff; }
+.network-info { margin-top: 7px; color: #7a8ba2; font-size: 11px; overflow-wrap: anywhere; }
 .controls .control-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .btn { border: 0; border-radius: 7px; height: 45px; color: white; font-weight: 700; }
 .start { background: #1ca35b; }
